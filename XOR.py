@@ -8,15 +8,13 @@ import matplotlib.pyplot as plt
 #--------------------------------------------------------------------------------------------------
 # FUNCTION DEFENITIONS
 
-# Hardware readout - cancels the shift
-def readout(Xv, G, S):
-    return Xv @ G - S * np.sum(Xv, axis=1, keepdims=True)     
+# scaled tanh with beta=0.5
+def tanh(z, beta=0.5):
+    return np.tanh(beta * z)
 
-def relu(z): 
-    return np.maximum(0, z)
-
-def d_relu(z): 
-    return (z > 0).astype(float)
+def d_tanh(a, beta=0.5):
+    # a = tanh(beta z)
+    return beta * (1.0 - a**2)
 
 def sigmoid(z): return 1/(1+np.exp(-z))
 
@@ -30,69 +28,77 @@ def binary_cross_entropy(y_pred, y_true):
 #--------------------------------------------------------------------------------------------------
 # HEATMAP VISUALIZATION FUNCTIONS
 
-def plot_decision_boundary(X, Y, W1, W2):
-    """Plot decision boundary of the network"""
-    # Create a grid of points
+def plot_decision_boundary(X_raw, Y, W1, W2):
+    # Create a grid 
     x_min, x_max = -0.5, 1.5
     y_min, y_max = -0.5, 1.5
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100),
-                         np.linspace(y_min, y_max, 100))
-    
-    # Predict for each grid point
-    grid_points = np.c_[xx.ravel(), yy.ravel()]
-    grid_points_bias = add_bias(grid_points)
-    
-    h_grid = relu(grid_points_bias @ W1)
+    xx_raw, yy_raw = np.meshgrid(
+        np.linspace(x_min, x_max, 200),
+        np.linspace(y_min, y_max, 200)
+    )
+
+    # Flatten grid and map to network input space [-1,1]
+    grid_raw = np.c_[xx_raw.ravel(), yy_raw.ravel()]      # in "visual" space
+    grid_net = 2 * grid_raw - 1                           # what the network sees
+    grid_net_bias = add_bias(grid_net)
+
+    # Forward pass on grid
+    h_grid = tanh(grid_net_bias @ W1)
     y_grid = sigmoid(add_bias(h_grid) @ W2)
-    Z = y_grid.reshape(xx.shape)
-    
+    Z = y_grid.reshape(xx_raw.shape)
+
     # Plot
     plt.figure(figsize=(10, 8))
-    plt.contourf(xx, yy, Z, levels=50, cmap='RdBu_r', alpha=0.8)
+    plt.contourf(xx_raw, yy_raw, Z, levels=50, cmap='RdBu', alpha=0.8)
     plt.colorbar(label='Output probability')
-    
-    # Plot training data
+
+    # Plot training data in raw 0/1 coordinates
     colors = ['red' if y == 0 else 'blue' for y in Y.flatten()]
-    plt.scatter(X[:, 0], X[:, 1], c=colors, s=100, edgecolors='black', label='XOR Data')
-    
+    plt.scatter(X_raw[:, 0], X_raw[:, 1], c=colors,
+                s=100, edgecolors='black', label='XOR Data')
+
     plt.title('Decision Boundary Heatmap')
     plt.xlabel('Input X1')
     plt.ylabel('Input X2')
-    plt.legend()
     plt.grid(True, alpha=0.3)
+    plt.xlim(x_min, x_max)
+    plt.ylim(y_min, y_max)
     plt.show()
 
-def plot_hidden_activations(X, W1):
-    """Plot heatmap of hidden layer activations"""
-    # Create a grid of points
+
+def plot_hidden_activations(X_raw, W1):
     x_min, x_max = -0.5, 1.5
     y_min, y_max = -0.5, 1.5
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 50),
-                         np.linspace(y_min, y_max, 50))
-    
-    grid_points = np.c_[xx.ravel(), yy.ravel()]
-    grid_points_bias = add_bias(grid_points)
-    
-    # Get hidden activations
-    h_grid = relu(grid_points_bias @ W1)
-    
-    # Plot each hidden neuron's activation
+    xx_raw, yy_raw = np.meshgrid(
+        np.linspace(x_min, x_max, 100),
+        np.linspace(y_min, y_max, 100)
+    )
+
+    grid_raw = np.c_[xx_raw.ravel(), yy_raw.ravel()]
+    grid_net = 2 * grid_raw - 1        # map to network space
+    grid_net_bias = add_bias(grid_net)
+
+    # Hidden activations
+    h_grid = tanh(grid_net_bias @ W1)
+
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    
+
     for i in range(2):
-        Z = h_grid[:, i].reshape(xx.shape)
-        im = axes[i].contourf(xx, yy, Z, levels=50, cmap='viridis', alpha=0.8)
+        Z = h_grid[:, i].reshape(xx_raw.shape)
+        im = axes[i].contourf(xx_raw, yy_raw, Z, levels=50, cmap='viridis', alpha=0.8)
         plt.colorbar(im, ax=axes[i])
         axes[i].set_title(f'Hidden Neuron {i+1} Activation')
         axes[i].set_xlabel('Input X1')
         axes[i].set_ylabel('Input X2')
         axes[i].grid(True, alpha=0.3)
-    
+        axes[i].set_xlim(x_min, x_max)
+        axes[i].set_ylim(y_min, y_max)
+
     plt.tight_layout()
     plt.show()
 
+
 def plot_weight_heatmaps(W1, W2, B):
-    """Plot heatmaps of weight matrices"""
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     
     # W1 heatmap
@@ -124,53 +130,52 @@ def plot_weight_heatmaps(W1, W2, B):
 #--------------------------------------------------------------------------------------------
 # Initialization 
 
-# XOR
-X = np.array([[0,0],[0,1],[1,0],[1,1]], dtype=np.float32)  # (4,2)
+# XOR Data
+X_raw = np.array([[0,0],[0,1],[1,0],[1,1]], dtype=np.float32)  # (4,2)
+X = 2*X_raw - 1   # now in {-1, +1}
+
 Y = np.array([[0],[1],[1],[0]], dtype=np.float32)          # (4,1)
 
 # Network architecture
 input, hidden, output = 2, 2, 1
 
+# Random number generator
 rng = np.random.default_rng()
 
-# Weights (can be negative). Init Xavier
-W1 = rng.normal(0,np.sqrt(1/(input+1)), size=(input+1, hidden))   # (2x2)
-W2 = rng.normal(0, np.sqrt(1/(hidden+1)), size=(hidden+1, output))  # (2x1)
+# Weights (can be negative). Init - Xavier
+W1 = rng.normal(0, np.sqrt(1/(input+1)), size=(input+1, hidden))     # (3x2)
+W2 = rng.normal(0, np.sqrt(1/(hidden+1)), size=(hidden+1, output))  # (3x1)
 
-W1[-1, :] = np.array([+0.5, -0.5])  # different hidden bias 
+# Bias
+W1[-1, :] = np.array([+0.1, -0.1])  
+
 
 # Random feedback matrix B
-max_attempts = 50  
-min_alignment = -0.1  # Allow slightly negative alignment
+B = rng.normal(0, np.sqrt(1/(hidden+1)), size=(output, hidden))
+B, _ = np.linalg.qr(B.T)
+B = B.T
 
-for attempt in range(max_attempts):
-    B = rng.normal(0, 1.0, size=(output, hidden))
-    B, _ = np.linalg.qr(B.T)
-    B = B.T
-    
-    x_sample = add_bias(X[0:1, :])
-    y_true = Y[0:1, :]
-    
-    h = relu(x_sample @ W1)  # CHANGED: tanh → relu
-    y_pred = sigmoid(add_bias(h) @ W2)
-    e_sample = y_pred - y_true
-    
-    W2_hidden = W2[:-1, :]
-    intermediate = W2_hidden.T @ B.T
-    alignment = e_sample.item() * intermediate.item() * e_sample.item()
-    
-    if alignment > min_alignment: 
-        print(f"Using B with alignment: {alignment:.4f}")
-        break
-else:
-    print("Using random B (no suitable found)")
 
+#--------------------------------------------------------------------------------------------
+# Conductance Mapping
+
+S = max(-W1.min(), -W2.min(), -B.min()) + 1e-3  # offset
+
+def to_conductance(W):
+    return W + S
+
+def to_weight(G):
+    return G - S
+
+G1 = to_conductance(W1)     # init
+G2 = to_conductance(W2)
+GB = to_conductance(B)
 
 #--------------------------------------------------------------------------------------------
 # TRAINING
 
-lr = 0.3         
-epochs = 500    
+lr = 1.0         
+epochs = 700
 
 idx = np.arange(len(X))
 
@@ -179,28 +184,48 @@ train_losses = []
 train_accuracies = []
 convergence_epoch = None
 epoch_numbers = []
+align_epochs, align_vals = [], []
+
 
 for ep in range(epochs):
     rng.shuffle(idx)
-    Xb = add_bias(X[idx])
+    Xb = add_bias(X[idx])             # (4,3) = (0,0,1), (0,1,1), (1,0,1), (1,1,1)
     Yb = Y[idx]
 
-    # forward - CHANGED: tanh → relu for hidden layer
-    h = relu(Xb @ W1)                 # (4,2) 
-    hb = add_bias(h)                  # (4,3)
-    y = sigmoid(hb @ W2)              # (4,1) 
+    # Forward pass
+    W1_eff = to_weight(G1)                # Read from hardware
+    W2_eff = to_weight(G2)
+    B_eff  = to_weight(GB)
 
-    # BCE-with-sigmoid: dL/dy_lin = (y - Y)
-    e = (y - Yb)                      # (4,1)
-    d_hid = (e @ B) * d_relu(h)       # (4,2) 
+    h = tanh(Xb @ W1_eff)                 # (4,2) => tanh(wx + b)
+    hb = add_bias(h)                      # (4,3) => (h, 1)
+    y = sigmoid(hb @ W2_eff)              # (4,1)
 
-    # batch updates
-    W2 -= lr * (hb.T @ e) / len(X)
-    W1 -= lr * (Xb.T @ d_hid) / len(X)
+
+    # Backward pass
+    e = (y - Yb)                          # (4,1)
+
+    # FA update direction
+    d_hid = (e @ B_eff) * d_tanh(h)       # (4,2) 
+
+    # Updates
+    lr_W2 = lr
+    lr_W1 = 0.25 * lr  
+
+    W2_eff -= lr_W2 * (hb.T @ e)     / len(X)
+    W1_eff -= lr_W1 * (Xb.T @ d_hid) / len(X)
+
+    G1 = to_conductance(W1_eff)           # Write to hardware
+    G2 = to_conductance(W2_eff)
+
+    # Synchronize logical weights
+    W1 = W1_eff.copy()
+    W2 = W2_eff.copy()
+
 
     # Monitor training progress
     if ep % 10 == 0:
-        h_val = relu(add_bias(X) @ W1)  
+        h_val = tanh(add_bias(X) @ W1)  
         y_val = sigmoid(add_bias(h_val) @ W2)
         
         loss = binary_cross_entropy(y_val, Y)
@@ -216,12 +241,23 @@ for ep in range(epochs):
             convergence_epoch = ep
             print(f"Converged at epoch {ep}")
             # break
+
+        # Check alignment
+        W = W2_eff[:-1, :].T  
+        g_true = e @ W         
+        g_fb   = e @ B_eff           
+        align_epochs.append(ep)
+        align_vals.append(float(np.mean(np.sum(g_true * g_fb, axis=1))))  # ⟨e^T W B e⟩
             
         if ep % 100 == 0:
-            print(f"Epoch {ep}: Loss = {loss:.4f}, Accuracy = {accuracy:.2%}")
-    
+            print(f"Loss = {loss:.4f}, Accuracy = {accuracy:.2%}")
+        
 
-h = relu(add_bias(X) @ W1)  
+
+#--------------------------------------------------------------------------------------------
+# INFERENCE     
+
+h = tanh(add_bias(X) @ W1)  
 y = sigmoid(add_bias(h) @ W2)
 pred = (y >= 0.5).astype(int)
 print("Outputs:", y.round(3).ravel())
@@ -229,24 +265,21 @@ print("Pred   :", pred.ravel().tolist(), " Targets:", Y.ravel().tolist())
 
 
 #-------------------------------------------------------------------------------------------
-# HEATMAP VISUALIZATIONS
+# # PLOTS
 
 # 1. Decision Boundary Heatmap
 print("Plotting decision boundary...")
-plot_decision_boundary(X, Y, W1, W2)
+plot_decision_boundary(X_raw, Y, W1, W2)
 
 # 2. Hidden Layer Activations Heatmap  
 print("Plotting hidden layer activations...")
-plot_hidden_activations(X, W1)
+plot_hidden_activations(X_raw, W1)
 
 # 3. Weight Matrices Heatmaps
 print("Plotting weight matrices...")
 plot_weight_heatmaps(W1, W2, B)
 
-
-# ---------------------------------------------------------------------------------------------------
-# PLOTS
-
+# 4. Loss and Accuracy Plots
 plt.figure(figsize=(12, 4))
 
 plt.subplot(1, 2, 1)
@@ -271,35 +304,14 @@ if convergence_epoch is not None:
 plt.tight_layout()
 plt.show()
 
-
-#-------------------------------------------------------------------------------------------
-# HARDWARE READOUT
-
-S = max(-W1.min(), -W2.min(), -B.min()) + 1e-3  # with eps
-
-G1 = W1 + S
-G2 = W2 + S
-B_hardware = B + S  
-
-print("\n Offset = ", S)
-print("\nLayer1 (W1) programmed conductances G1:\n", G1.round(4))
-print("\nLayer2 (W2) programmed conductances G2:\n", G2.round(4))
-print("\nB matrix conductances:\n", B_hardware.round(4))
+# 5. Alignment
+plt.figure(figsize=(5,3))
+plt.plot(align_epochs, align_vals, marker='o')
+plt.axhline(0.0, ls='--', alpha=0.5)
+plt.title('Alignment ⟨e^T W B e⟩')
+plt.xlabel('Epoch'); plt.ylabel('Value')
+plt.grid(True, alpha=0.3)
+plt.tight_layout(); 
+plt.show()
 
 
-# Re-run forward using the "hardware view"
-h_hw = relu(readout(add_bias(X), G1, S))  
-y_hw = sigmoid(readout(add_bias(h_hw), G2, S))
-
-print("\nHardware outputs:", y_hw.round(3).ravel())
-print("Matches software:", np.allclose(y_hw, y, atol=1e-3))
-
-
-#-------------------------------------------------------------------------------------------------
-'''
-NOTES:
-
-1. Changed tanh to ReLu
-2. Heatmaps implemented
-
-'''
