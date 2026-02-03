@@ -155,6 +155,11 @@ B = rng.normal(0, np.sqrt(1/(hidden+1)), size=(output, hidden))
 B, _ = np.linalg.qr(B.T)
 B = B.T
 
+print("Before Trianing Weights:")
+print("W1:\n", W1)
+print("W2:\n", W2)
+print("B:\n", B)
+
 
 #--------------------------------------------------------------------------------------------
 # Conductance Mapping
@@ -175,7 +180,7 @@ GB = to_conductance(B)
 # TRAINING
 
 lr = 1.0         
-epochs = 700
+epochs = 1000
 
 idx = np.arange(len(X))
 
@@ -253,6 +258,10 @@ for ep in range(epochs):
             print(f"Loss = {loss:.4f}, Accuracy = {accuracy:.2%}")
         
 
+print("After Training Weights:")
+print("W1:\n", W1)
+print("W2:\n", W2)
+print("B:\n", B)
 
 #--------------------------------------------------------------------------------------------
 # INFERENCE     
