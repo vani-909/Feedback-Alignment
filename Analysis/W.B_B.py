@@ -131,17 +131,17 @@ def run_one(trial_seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
             W_last.ravel(), B_eff.ravel()
         )
     
-    # --- init u and cancellation (ep=0 quantities) ---
+    # init u and cancellation
     W1_eff0 = toW_W(G1)
     h0 = tanh(Xb @ W1_eff0)
     hb0 = add_bias(h0)
     y0 = sigmoid(hb0 @ toW_W(G2))
     e0 = (y0 - Y)
 
-    u0 = (e0 @ B_eff) * d_tanh(h0)              # (4,2)
-    U0 = u0.sum(axis=0)                         # (2,)
+    u0 = (e0 @ B_eff) * d_tanh(h0)         
+    U0 = u0.sum(axis=0)                       
     cancel = np.linalg.norm(U0) / (np.sum(np.linalg.norm(u0, axis=1)) + 1e-12)
-    B0 = B_eff.ravel().copy()                   # (2,)
+    B0 = B_eff.ravel().copy()                 
 
     converged = False
 
@@ -186,9 +186,9 @@ def run_one(trial_seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
             W_last.ravel(), B_final.ravel()
         )
 
-    # --- final hidden activations on XOR inputs (4x2) ---
+    # final hidden activations
     W1_final = toW_W(G1)
-    h_final = tanh(Xb @ W1_final)   # shape (4,2)
+    h_final = tanh(Xb @ W1_final)  
     return alignment_value, converged, w_vec, b_vec, B0, u0, cancel, h_final
 
 
@@ -298,8 +298,8 @@ def main():
         n = np.linalg.norm(v)
         return v / n if n > 0 else v
 
-    W_dirs = np.array([norm2(wvecs[i]) for i in right_idx])
-    B_dirs = np.array([norm2(bvecs[i]) for i in right_idx])
+    W_dirs = np.array([norm2(wvecs[i]) for i in left_idx])
+    B_dirs = np.array([norm2(bvecs[i]) for i in left_idx])
 
     plt.figure(figsize=(7,7))
     ax = plt.gca()
