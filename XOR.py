@@ -3,7 +3,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-
+from matplotlib.animation import FuncAnimation
 
 #--------------------------------------------------------------------------------------------------
 # FUNCTION DEFENITIONS
@@ -199,6 +199,13 @@ convergence_epoch = None
 epoch_numbers = []
 align_epochs, align_vals = [], []
 
+# Record for animation
+record_every = 5  
+ep_hist = []
+w_hist = []       # normalized W2 (2D, no bias)
+b_fixed = None    # normalized B (2D)
+cos_hist = []     # cosine similarity between w and b
+
 
 for ep in range(epochs):
     rng.shuffle(idx)
@@ -235,6 +242,20 @@ for ep in range(epochs):
     W1 = W1_eff.copy()
     W2 = W2_eff.copy()
 
+    # Record for animation
+    if ep % record_every == 0:
+        w = W2_eff[:-1, 0].copy()    
+        b = B_eff[0, :].copy()       
+
+        w_n = w / (np.linalg.norm(w) + 1e-12)
+        b_n = b / (np.linalg.norm(b) + 1e-12)
+
+        if b_fixed is None:
+            b_fixed = b_n.copy()
+
+        ep_hist.append(ep)
+        w_hist.append(w_n)
+        cos_hist.append(float(np.dot(w_n, b_fixed)))
 
     # Monitor training progress
     if ep % 10 == 0:
@@ -331,4 +352,91 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout(); 
 plt.show()
 
+#-----------------------------------------------------------------------------------------
+# ANIMATION: W2 vector rotates towards fixed B vector
+
+def save_alignment_animation(ep_hist, w_hist, b_fixed, cos_hist,
+                             out_mp4="fa_alignment.mp4",
+                             out_gif="fa_alignment.gif",
+                             fps=30):
+
+    if b_fixed is None or len(w_hist) == 0:
+        print("Nothing recorded for animation. Increase epochs or reduce record_every.")
+        return
+
+    w_arr = np.array(w_hist)   
+    ep_arr = np.array(ep_hist)
+    cos_arr = np.array(cos_hist)
+
+    fig, (axV, axC) = plt.subplots(1, 2, figsize=(11, 4))
+
+    # Vector panel
+    axV.set_title("Vector view (normalized)")
+    axV.set_xlim(-1.2, 1.2)
+    axV.set_ylim(-1.2, 1.2)
+    axV.set_aspect('equal', 'box')
+    axV.grid(True, alpha=0.3)
+    axV.axhline(0, alpha=0.4)
+    axV.axvline(0, alpha=0.4)
+
+    # Plot fixed B arrow once
+    b0 = np.array(b_fixed, dtype=float)
+    b_line, = axV.plot([0, b0[0]], [0, b0[1]], lw=3, label="B (fixed)")
+    w_line, = axV.plot([0, w_arr[0, 0]], [0, w_arr[0, 1]], lw=3, label="W2 (evolving)")
+    txt = axV.text(-1.15, 1.05, "", fontsize=10)
+
+    axV.legend(loc="lower left")
+
+    # Cosine panel
+    axC.set_title("cos(W2, B) over time")
+    axC.set_xlim(ep_arr.min(), ep_arr.max())
+    axC.set_ylim(-1.05, 1.05)
+    axC.grid(True, alpha=0.3)
+    axC.axhline(0, ls="--", alpha=0.5)
+
+    cos_line, = axC.plot([], [], lw=2)
+    cos_dot,  = axC.plot([], [], marker="o")
+
+    def init():
+        cos_line.set_data([], [])
+        cos_dot.set_data([], [])
+        txt.set_text("")
+        return (b_line, w_line, cos_line, cos_dot, txt)
+
+    def update(i):
+        w = w_arr[i]
+        w_line.set_data([0, w[0]], [0, w[1]])
+
+        cos_line.set_data(ep_arr[:i+1], cos_arr[:i+1])
+        cos_dot.set_data([ep_arr[i]], [cos_arr[i]])
+
+        txt.set_text(f"epoch={ep_arr[i]}   cos={cos_arr[i]:+.3f}")
+        return (b_line, w_line, cos_line, cos_dot, txt)
+
+    anim = FuncAnimation(fig, update, frames=len(ep_arr), init_func=init,
+                         interval=1000/fps, blit=True)
+
+    # Try MP4 (ffmpeg) first, else GIF
+    try:
+        from matplotlib.animation import FFMpegWriter
+        writer = FFMpegWriter(fps=fps, bitrate=1800)
+        anim.save(out_mp4, writer=writer)
+        print(f"Saved video: {out_mp4}")
+    except Exception as e_mp4:
+        print(f"MP4 save failed ({e_mp4}). Trying GIF...")
+        try:
+            from matplotlib.animation import PillowWriter
+            writer = PillowWriter(fps=fps)
+            anim.save(out_gif, writer=writer)
+            print(f"Saved gif: {out_gif}")
+        except Exception as e_gif:
+            print(f"GIF save also failed: {e_gif}")
+
+    plt.close(fig)
+
+# Run animation save
+save_alignment_animation(ep_hist, w_hist, b_fixed, cos_hist,
+                         out_mp4="fa_alignment.mp4",
+                         out_gif="fa_alignment.gif",
+                         fps=30)
 
