@@ -164,17 +164,25 @@ print("B:\n", B)
 #--------------------------------------------------------------------------------------------
 # Conductance Mapping
 
-S = max(-W1.min(), -W2.min(), -B.min()) + 1e-3  # offset
+G_off = 1.1669e-3
+G_on  = 1.3327e-3
 
-def to_conductance(W):
-    return W + S
+Wmax = 10
+Bmax = 1
 
-def to_weight(G):
-    return G - S
+G0 = 0.5 * (G_on + G_off)
+dG = (G_on - G_off)
 
-G1 = to_conductance(W1)     # init
-G2 = to_conductance(W2)
-GB = to_conductance(B)
+alpha_W = 2.0 * Wmax / dG
+alpha_B = 2.0 * Bmax / dG
+
+toG_W = lambda W: np.clip(G0 + (W / alpha_W), G_off, G_on)
+toW_W = lambda G: alpha_W * (G - G0)
+
+toG_B = lambda Bm: np.clip(G0 + (Bm / alpha_B), G_off, G_on)
+toW_B = lambda G: alpha_B * (G - G0)
+
+G1, G2, GB = toG_W(W1), toG_W(W2), toG_B(B)
 
 #--------------------------------------------------------------------------------------------
 # TRAINING
@@ -198,9 +206,9 @@ for ep in range(epochs):
     Yb = Y[idx]
 
     # Forward pass
-    W1_eff = to_weight(G1)                # Read from hardware
-    W2_eff = to_weight(G2)
-    B_eff  = to_weight(GB)
+    W1_eff = toW_W(G1)                # Read from hardware
+    W2_eff = toW_W(G2)
+    B_eff  = toW_B(GB)
 
     h = tanh(Xb @ W1_eff)                 # (4,2) => tanh(wx + b)
     hb = add_bias(h)                      # (4,3) => (h, 1)
@@ -220,8 +228,8 @@ for ep in range(epochs):
     W2_eff -= lr_W2 * (hb.T @ e)     / len(X)
     W1_eff -= lr_W1 * (Xb.T @ d_hid) / len(X)
 
-    G1 = to_conductance(W1_eff)           # Write to hardware
-    G2 = to_conductance(W2_eff)
+    G1 = toG_W(W1_eff)           # Write to hardware
+    G2 = toG_W(W2_eff)
 
     # Synchronize logical weights
     W1 = W1_eff.copy()

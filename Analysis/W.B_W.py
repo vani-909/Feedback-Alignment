@@ -18,6 +18,11 @@ ALIGN_AT = "init"        # "init" or "final"
 MASTER_SEED = 123
 CHECK_EVERY = 10
 
+G_off = 1.1669e-3
+G_on  = 1.3327e-3
+
+Wmax = 10
+Bmax = 1
 
 # ------------------------------------------------------------
 # ACTIVATIONS 
@@ -62,7 +67,7 @@ INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM = 2, 2, 1
 
 master_rng = np.random.default_rng(MASTER_SEED)
 
-B_FIXED = master_rng.normal(0.375, 1.0, size=(OUTPUT_DIM, HIDDEN_DIM))
+B_FIXED = master_rng.normal(0, 1.0, size=(OUTPUT_DIM, HIDDEN_DIM))
 B_FIXED, _ = np.linalg.qr(B_FIXED.T)
 B_FIXED = B_FIXED.T
 
@@ -75,24 +80,32 @@ def run_one(seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
     rng = np.random.default_rng(seed)
 
     # Random forward weights per trial
-    W1 = rng.normal(0.375, np.sqrt(1/(INPUT_DIM+1)), size=(INPUT_DIM+1, HIDDEN_DIM))
-    W2 = rng.normal(0.375, np.sqrt(1/(HIDDEN_DIM+1)), size=(HIDDEN_DIM+1, OUTPUT_DIM))
+    W1 = rng.normal(0, np.sqrt(1/(INPUT_DIM+1)), size=(INPUT_DIM+1, HIDDEN_DIM))
+    W2 = rng.normal(0, np.sqrt(1/(HIDDEN_DIM+1)), size=(HIDDEN_DIM+1, OUTPUT_DIM))
     W1[-1, :] = np.array([+0.1, -0.1])
 
     B = B_FIXED.copy()
 
     # Conductance mapping
-    S = max(-W1.min(), -W2.min(), -B.min()) + 1e-3
-    toG = lambda W: W + S
-    toW = lambda G: G - S
+    G0 = 0.5 * (G_on + G_off)
+    dG = (G_on - G_off)
 
-    G1, G2, GB = toG(W1), toG(W2), toG(B)
+    alpha_W = 2.0 * Wmax / dG
+    alpha_B = 2.0 * Bmax / dG
+
+    toG_W = lambda W: np.clip(G0 + (W / alpha_W), G_off, G_on)
+    toW_W = lambda G: alpha_W * (G - G0)
+
+    toG_B = lambda Bm: np.clip(G0 + (Bm / alpha_B), G_off, G_on)
+    toW_B = lambda G: alpha_B * (G - G0)
+
+    G1, G2, GB = toG_W(W1), toG_W(W2), toG_B(B)
 
     # alignment at INIT 
     if align_at == "init":
-        W2_eff = toW(G2)
+        W2_eff = toW_W(G2)
         W_last = W2_eff[:-1, :].T
-        B_eff  = toW(GB)
+        B_eff  = toW_W(GB)
         alignment_value = cosine_similarity_vec(W_last.ravel(), B_eff.ravel())
 
     converged = False
@@ -100,9 +113,9 @@ def run_one(seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
     # TRAINING LOOP 
     for ep in range(epochs):
 
-        W1_eff = toW(G1)
-        W2_eff = toW(G2)
-        B_eff  = toW(GB)
+        W1_eff = toW_W(G1)
+        W2_eff = toW_W(G2)
+        B_eff  = toW_B(GB)
 
         # Forward
         h = tanh(Xb @ W1_eff)
@@ -119,12 +132,12 @@ def run_one(seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
         W2_eff -= lr * (hb.T @ e) / len(X)
         W1_eff -= 0.25 * lr * (Xb.T @ d_hid) / len(X)
 
-        G1, G2 = toG(W1_eff), toG(W2_eff)
+        G1, G2 = toG_W(W1_eff), toG_W(W2_eff)
 
         # Convergence check
         if ep % CHECK_EVERY == 0 or ep == epochs - 1:
-            h_chk = tanh(add_bias(X) @ toW(G1))
-            y_chk = sigmoid(add_bias(h_chk) @ toW(G2))
+            h_chk = tanh(add_bias(X) @ toW_W(G1))
+            y_chk = sigmoid(add_bias(h_chk) @ toW_W(G2))
             pred = (y_chk >= 0.5).astype(int)
             if np.array_equal(pred.ravel(), Y.ravel()):
                 converged = True
@@ -132,9 +145,9 @@ def run_one(seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
 
     # alignment at FINAL
     if align_at == "final":
-        W2_final = toW(G2)
+        W2_final = toW_W(G2)
         W_last = W2_final[:-1, :].T
-        B_final = toW(GB)
+        B_final = toW_B(GB)
         alignment_value = cosine_similarity_vec(W_last.ravel(), B_final.ravel())
 
     return alignment_value, converged

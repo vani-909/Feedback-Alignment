@@ -99,7 +99,7 @@ def run_one(trial_seed, lr=LEARNING_RATE, epochs=EPOCHS, align_at=ALIGN_AT):
     B, _ = np.linalg.qr(B.T)
     B = B.T
 
-    # Conductance offset (Mean shift)
+    # Conductance mapping
     G0 = 0.5 * (G_on + G_off)
     dG = (G_on - G_off)
 
