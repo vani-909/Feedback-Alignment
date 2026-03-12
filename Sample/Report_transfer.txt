@@ -1,0 +1,9 @@
+=== Transfer Curve (Id vs Vg) ===
+Vg range: -0.800 to 0.800 V, step ~0.020 V
+Vd bias : -0.100 V (on smua)
+Cycles  : 3  | points/cycle: 161
+MeasurementDelay (s/step): 0.200
+Read bias (±): 0.100 V
+I(ON)  @ +0.10 V = 9.5588e-05 A (idx 45)
+I(OFF) @ -0.10 V = 1.1096e-04 A (idx 35)
+ON/OFF ratio = 0.86
